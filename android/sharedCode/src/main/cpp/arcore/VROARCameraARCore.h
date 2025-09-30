@@ -63,7 +63,17 @@ public:
     void getImageData(uint8_t *outImageData);
     VROVector3f getImageSize();
     void getImageIntrinsics(float *outFx, float *outFy, float *outCx, float *outCy);
-    
+
+    /*
+     Load the image data from ARCore, and stores it in _image.
+     */
+    bool loadImageData();
+
+    /*
+     Get the full rotated camera image size (before cropping to viewport).
+     */
+    VROVector3f getRotatedImageSize();
+
 private:
 
     arcore::Frame *_frame;
@@ -74,16 +84,10 @@ private:
     VROMatrix4f _rotation;
 
     /*
-     Load the image data from ARCore, and stores it in _image.
-     */
-    bool loadImageData();
-
-    /*
      Retrieve the rotated camera image data in RGBA. The ARCore _image is converted from YCbCr to
      RGBA and rotated to fit the current viewport. It is not cropped to fit the current viewport size.
      */
     void getRotatedImageData(uint8_t *outImageData);
-    VROVector3f getRotatedImageSize();
 
     /*
     Retrieve the cropping rectangle to use on the rotated image data to get the cropped image

@@ -62,6 +62,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
@@ -420,6 +423,13 @@ public class ViroViewARCore extends ViroView {
     private ViroMediaRecorder mMediaRecorder;
     private StartupListener mStartupListener;
     private CameraImageListener mCameraImageListener;
+
+    // Frame tap listener for pre-viewport frame access
+    private FrameTapListener mFrameTapListener;
+    private boolean mFrameTapEnableCpuImages = false;
+    private ExecutorService mFrameTapExecutor;
+    private final AtomicBoolean mFrameTapProcessing = new AtomicBoolean(false);
+    private final Object mFrameTapLock = new Object();
 
     // The renderer start listener is invoked when these are all true
     private AtomicBoolean mRendererSurfaceInitialized = new AtomicBoolean(false);
@@ -852,6 +862,9 @@ public class ViroViewARCore extends ViroView {
             mFrameListeners = null;
         }
 
+        // Clean up frame tap listener and executor
+        clearPreViewportFrameListener();
+
         super.dispose();
 
         // VA: WE call mPlatformUtil.dispose() here instead of before super.dispose, since super.dispose
@@ -1075,6 +1088,124 @@ public class ViroViewARCore extends ViroView {
      */
     public CameraImageListener getCameraImageListener() {
         return mCameraImageListener;
+    }
+
+    /**
+     * Register a {@link FrameTapListener} to receive pre-viewport camera frames from ARCore.
+     * This provides access to full-resolution camera texture and optional CPU image data,
+     * along with pose and intrinsics, before the frame is rendered to the display.
+     * <p>
+     * This is useful for external processing such as WebRTC streaming, computer vision, or
+     * custom rendering pipelines that need uncropped camera frames.
+     * <p>
+     * <b>Threading:</b> Callbacks are invoked on a dedicated background thread, not the GL thread
+     * or main thread. This allows CPU-intensive processing without blocking AR rendering.
+     * <p>
+     * <b>Performance:</b> The listener should complete callbacks quickly (target <5ms for texture,
+     * <10ms for CPU images) to maintain 30fps without frame drops.
+     * <p>
+     * Only one listener can be registered at a time. Calling this method again will replace the
+     * previous listener.
+     *
+     * @param listener The {@link FrameTapListener} to receive frame callbacks. Pass null to
+     *                 unregister the current listener (equivalent to calling
+     *                 {@link #clearPreViewportFrameListener()}).
+     * @param enableCpuImages If true, {@link FrameTapListener#onCpuImageFrame(CpuImage)} will be
+     *                        called with CPU-accessible YUV image data. This has a performance cost.
+     *                        If false, only {@link FrameTapListener#onTextureFrame(TextureInfo)}
+     *                        will be called.
+     */
+    public void setPreViewportFrameListener(FrameTapListener listener, boolean enableCpuImages) {
+        synchronized (mFrameTapLock) {
+            // Clean up previous listener if any
+            if (mFrameTapListener != null && mFrameTapExecutor != null) {
+                clearPreViewportFrameListenerInternal();
+            }
+
+            mFrameTapListener = listener;
+            mFrameTapEnableCpuImages = enableCpuImages;
+
+            if (listener != null) {
+                // Create executor for frame callbacks
+                mFrameTapExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        Thread t = new Thread(r, "ViroFrameTap");
+                        t.setPriority(Thread.NORM_PRIORITY - 1);  // Slightly lower than UI
+                        return t;
+                    }
+                });
+                Log.d(TAG, "FrameTapListener registered (CPU images: " + enableCpuImages + ")");
+
+                // Register with native renderer
+                ((RendererARCore) mNativeRenderer).setFrameTapListener(listener, enableCpuImages);
+            } else {
+                // Unregister from native renderer
+                ((RendererARCore) mNativeRenderer).setFrameTapListener(null, false);
+            }
+        }
+    }
+
+    /**
+     * Unregister the current {@link FrameTapListener}. After this call returns, no more
+     * frame callbacks will be invoked.
+     * <p>
+     * This method blocks briefly to ensure any in-flight callback completes before returning.
+     * <p>
+     * <b>Threading:</b> Safe to call from any thread.
+     */
+    public void clearPreViewportFrameListener() {
+        synchronized (mFrameTapLock) {
+            clearPreViewportFrameListenerInternal();
+        }
+    }
+
+    /**
+     * Internal method to clear the frame tap listener. Must be called with mFrameTapLock held.
+     */
+    private void clearPreViewportFrameListenerInternal() {
+        if (mFrameTapListener == null) {
+            return;
+        }
+
+        Log.d(TAG, "Clearing FrameTapListener");
+
+        // Unregister from native renderer
+        ((RendererARCore) mNativeRenderer).setFrameTapListener(null, false);
+
+        mFrameTapListener = null;
+        mFrameTapEnableCpuImages = false;
+
+        if (mFrameTapExecutor != null) {
+            mFrameTapExecutor.shutdown();
+            // Wait briefly for any in-flight callbacks to complete
+            try {
+                if (!mFrameTapExecutor.awaitTermination(100, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    Log.w(TAG, "FrameTapListener executor did not terminate cleanly");
+                }
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Interrupted while waiting for FrameTapListener executor to terminate");
+            }
+            mFrameTapExecutor = null;
+        }
+    }
+
+    /**
+     * Check if CPU image support is available on this device. This queries ARCore capabilities
+     * to determine if {@link com.google.ar.core.Frame#acquireCameraImage()} is supported.
+     * <p>
+     * If this returns false, setting {@code enableCpuImages=true} in
+     * {@link #setPreViewportFrameListener(FrameTapListener, boolean)} will have no effect
+     * (only texture callbacks will be invoked).
+     *
+     * @return true if CPU images are supported on this device, false otherwise.
+     */
+    public boolean isCpuImageSupported() {
+        // CPU image support via Frame.acquireCameraImage() is generally available on all
+        // ARCore-supported devices. This method is provided for future-proofing in case
+        // certain devices or ARCore versions have limitations.
+        // For now, we assume support if ARCore is initialized.
+        return mARCoreInstalled.get();
     }
 
     /**

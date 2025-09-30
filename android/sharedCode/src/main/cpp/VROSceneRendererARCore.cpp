@@ -52,6 +52,7 @@
 #include "VROInputControllerCardboard.h"
 #include "VROAllocationTracker.h"
 #include "VROInputControllerARAndroid.h"
+#include "jni/VROFrameTapListener.h"
 
 static VROVector3f const kZeroVector = VROVector3f();
 
@@ -60,7 +61,8 @@ static VROVector3f const kZeroVector = VROVector3f();
 VROSceneRendererARCore::VROSceneRendererARCore(VRORendererConfiguration config,
                                                std::shared_ptr<gvr::AudioApi> gvrAudio) :
     _arcoreInstalled(false),
-    _destroyed(false) {
+    _destroyed(false),
+    _displayRotation(0) {
 
     _driver = std::make_shared<VRODriverOpenGLAndroid>(gvrAudio);
     _session = std::make_shared<VROARSessionARCore>(_driver);
@@ -135,6 +137,16 @@ void VROSceneRendererARCore::renderFrame() {
 
     _session->setViewport(viewport);
     std::unique_ptr<VROARFrame> &frame = _session->updateFrame();
+
+    // Dispatch frame to tap listener (if registered) BEFORE viewport rendering
+    if (_frameTapListener && _frameTapListener->isValid()) {
+        VROARFrameARCore *arcoreFrame = dynamic_cast<VROARFrameARCore*>(frame.get());
+        if (arcoreFrame) {
+            int cameraTextureId = (int)_session->getCameraTextureId();
+            _frameTapListener->dispatchFrame(arcoreFrame, cameraTextureId, _displayRotation);
+        }
+    }
+
     updateARBackground(frame, backgroundNeedsReset);
 
     // Notify the current ARScene with the ARCamera's tracking state.
@@ -397,6 +409,7 @@ std::vector<std::shared_ptr<VROARHitTestResult>> VROSceneRendererARCore::perform
 }
 
 void VROSceneRendererARCore::setDisplayGeometry(int rotation, int width, int height) {
+    _displayRotation = rotation;
     _session->setDisplayGeometry((VROARDisplayRotation) rotation, width, height);
 }
 
@@ -421,6 +434,14 @@ void VROSceneRendererARCore::setAnchorDetectionTypes(std::set<VROAnchorDetection
 
 void VROSceneRendererARCore::enableTracking(bool shouldTrack) {
 
+}
+
+void VROSceneRendererARCore::setFrameTapListener(std::shared_ptr<VROFrameTapListener> listener) {
+    _frameTapListener = listener;
+}
+
+void VROSceneRendererARCore::clearFrameTapListener() {
+    _frameTapListener.reset();
 }
 
 

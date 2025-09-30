@@ -102,6 +102,10 @@ public class RendererARCore extends Renderer {
         return nativeisCameraAutoFocusEnabled(mNativeRef);
     }
 
+    public void setFrameTapListener(FrameTapListener listener, boolean enableCpuImages) {
+        nativeSetFrameTapListener(mNativeRef, listener, enableCpuImages);
+    }
+
     private native long nativeCreateRendererARCore(ClassLoader appClassLoader, Context context,
                                                    AssetManager assets, PlatformUtil platformUtil,
                                                    boolean enableShadows, boolean enableHDR, boolean enablePBR, boolean enableBloom);
@@ -118,4 +122,5 @@ public class RendererARCore extends Renderer {
     private native void nativeSetCameraImageListener(long nativeRenderer, long contextRef, CameraImageListener listener);
     private native void nativeSetCameraAutoFocusEnabled(long nativeRenderer, boolean enabled);
     private native boolean nativeisCameraAutoFocusEnabled(long nativeRenderer);
+    private native void nativeSetFrameTapListener(long nativeRenderer, FrameTapListener listener, boolean enableCpuImages);
 }

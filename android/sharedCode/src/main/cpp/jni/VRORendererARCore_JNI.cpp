@@ -33,6 +33,7 @@
 #include "VRORenderer.h"
 #include "ViroContextAndroid_JNI.h"
 #include "VROCameraImageListener.h"
+#include "VROFrameTapListener.h"
 #include "arcore/ARUtils_JNI.h"
 
 #if VRO_PLATFORM_ANDROID
@@ -354,6 +355,42 @@ VRO_METHOD(VRO_BOOL, nativeisCameraAutoFocusEnabled) (VRO_ARGS
     std::shared_ptr<VROSceneRenderer> renderer = Renderer::native(nativeRenderer);
     std::shared_ptr<VROSceneRendererARCore> arRenderer = std::dynamic_pointer_cast<VROSceneRendererARCore>(renderer);
     return arRenderer->isCameraAutoFocusEnabled();
+}
+
+VRO_METHOD(void, nativeSetFrameTapListener) (VRO_ARGS
+                                             jlong nativeRenderer,
+                                             jobject listener_j,
+                                             jboolean enableCpuImages) {
+    std::shared_ptr<VROSceneRenderer> renderer = Renderer::native(nativeRenderer);
+    std::weak_ptr<VROSceneRendererARCore> arRenderer_w = std::dynamic_pointer_cast<VROSceneRendererARCore>(renderer);
+
+    if (listener_j == nullptr) {
+        // Clear listener
+        VROPlatformDispatchAsyncRenderer([arRenderer_w] {
+            std::shared_ptr<VROSceneRendererARCore> arRenderer = arRenderer_w.lock();
+            if (arRenderer) {
+                arRenderer->clearFrameTapListener();
+            }
+        });
+    } else {
+        // Set listener
+        jobject listener_g = VRO_NEW_GLOBAL_REF(listener_j);
+        VROPlatformDispatchAsyncRenderer([arRenderer_w, listener_g, enableCpuImages] {
+            // Get JNIEnv* for the render thread (required for VRO macros)
+            VRO_ENV env = VROPlatformGetJNIEnv();
+
+            std::shared_ptr<VROSceneRendererARCore> arRenderer = arRenderer_w.lock();
+            if (!arRenderer) {
+                VRO_DELETE_GLOBAL_REF(listener_g);
+                return;
+            }
+
+            std::shared_ptr<VROFrameTapListener> frameTapListener =
+                    std::make_shared<VROFrameTapListener>(listener_g, enableCpuImages, env);
+            arRenderer->setFrameTapListener(frameTapListener);
+            VRO_DELETE_GLOBAL_REF(listener_g);
+        });
+    }
 }
 
 
