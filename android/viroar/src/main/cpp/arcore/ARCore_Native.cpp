@@ -10,6 +10,8 @@
 #include <media/NdkImage.h>
 #include <media/NdkImageReader.h>
 #include <android/log.h>
+#include <climits>
+#include <cstdlib>
 
 #ifndef LOG_TAG
 #define LOG_TAG "Viro"
@@ -752,9 +754,11 @@ namespace arcore {
         int32_t numConfigs = 0;
         ArCameraConfigList_getSize(_session, configList, &numConfigs);
 
-        // Find highest resolution config based on CPU image dimensions
+        // Find MEDIUM resolution config (1280x720) for optimal streaming performance
+        // HIGH (1920x1080) causes CPU bottleneck in YUV deinterleaving
         ArCameraConfig *bestConfig = nullptr;
-        int32_t maxPixels = 0;
+        int32_t targetPixels = 1280 * 720;  // Target medium resolution
+        int32_t closestDiff = INT_MAX;
 
         for (int32_t i = 0; i < numConfigs; i++) {
             ArCameraConfig *config = nullptr;
@@ -765,14 +769,16 @@ namespace arcore {
             ArCameraConfig_getImageDimensions(_session, config, &width, &height);
 
             int32_t pixels = width * height;
+            int32_t diff = abs(pixels - targetPixels);
             pinfo("ARCore camera config[%d]: CPU image %dx%d (%d pixels)", i, width, height, pixels);
 
-            if (pixels > maxPixels) {
+            // Find config closest to target (prefer exact match or slightly higher)
+            if (diff < closestDiff) {
                 if (bestConfig) {
                     ArCameraConfig_destroy(bestConfig);
                 }
                 bestConfig = config;
-                maxPixels = pixels;
+                closestDiff = diff;
             } else {
                 ArCameraConfig_destroy(config);
             }
@@ -783,7 +789,7 @@ namespace arcore {
             if (status == AR_SUCCESS) {
                 int32_t w, h;
                 ArCameraConfig_getImageDimensions(_session, bestConfig, &w, &h);
-                pinfo("✓ ARCore camera set to HIGHEST resolution: %dx%d CPU image", w, h);
+                pinfo("✓ ARCore camera set to MEDIUM resolution: %dx%d CPU image", w, h);
             } else {
                 pinfo("✗ Failed to set camera config (status=%d), using default", status);
             }
