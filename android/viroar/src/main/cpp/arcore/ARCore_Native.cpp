@@ -739,6 +739,59 @@ namespace arcore {
 
     SessionNative::SessionNative(void *applicationContext, JNIEnv *env) {
         ArSession_create(env, applicationContext, &_session);
+
+        // Configure camera for highest resolution CPU image access
+        // ARCore defaults to ~640x480 (LOW), but supports MEDIUM and HIGH resolutions
+        ArCameraConfigFilter *filter = nullptr;
+        ArCameraConfigFilter_create(_session, &filter);
+
+        ArCameraConfigList *configList = nullptr;
+        ArCameraConfigList_create(_session, &configList);
+        ArSession_getSupportedCameraConfigsWithFilter(_session, filter, configList);
+
+        int32_t numConfigs = 0;
+        ArCameraConfigList_getSize(_session, configList, &numConfigs);
+
+        // Find highest resolution config based on CPU image dimensions
+        ArCameraConfig *bestConfig = nullptr;
+        int32_t maxPixels = 0;
+
+        for (int32_t i = 0; i < numConfigs; i++) {
+            ArCameraConfig *config = nullptr;
+            ArCameraConfig_create(_session, &config);
+            ArCameraConfigList_getItem(_session, configList, i, config);
+
+            int32_t width, height;
+            ArCameraConfig_getImageDimensions(_session, config, &width, &height);
+
+            int32_t pixels = width * height;
+            pinfo("ARCore camera config[%d]: CPU image %dx%d (%d pixels)", i, width, height, pixels);
+
+            if (pixels > maxPixels) {
+                if (bestConfig) {
+                    ArCameraConfig_destroy(bestConfig);
+                }
+                bestConfig = config;
+                maxPixels = pixels;
+            } else {
+                ArCameraConfig_destroy(config);
+            }
+        }
+
+        if (bestConfig) {
+            ArStatus status = ArSession_setCameraConfig(_session, bestConfig);
+            if (status == AR_SUCCESS) {
+                int32_t w, h;
+                ArCameraConfig_getImageDimensions(_session, bestConfig, &w, &h);
+                pinfo("✓ ARCore camera set to HIGHEST resolution: %dx%d CPU image", w, h);
+            } else {
+                pinfo("✗ Failed to set camera config (status=%d), using default", status);
+            }
+            ArCameraConfig_destroy(bestConfig);
+        }
+
+        ArCameraConfigList_destroy(configList);
+        ArCameraConfigFilter_destroy(filter);
     }
 
     SessionNative::~SessionNative() {

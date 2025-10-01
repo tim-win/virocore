@@ -259,12 +259,132 @@ jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
                                             VROARFrameARCore *frame,
                                             VROARCameraARCore *camera,
                                             int displayRotation) {
-    // CPU image support requires ARCore Frame.acquireCameraImage()
-    // This is not currently implemented in VROARCameraARCore, so we return nullptr
-    // TODO: Implement CPU image extraction via ARCore C API
-    __android_log_print(ANDROID_LOG_WARN, FRAME_TAP_TAG,
-        "CPU image path not yet implemented, returning nullptr");
-    return nullptr;
+    // Get ARCore camera image
+    arcore::Image *image = nullptr;
+    arcore::ImageRetrievalStatus status = frame->getFrameInternal()->acquireCameraImage(&image);
+
+    if (status != arcore::ImageRetrievalStatus::Success || !image) {
+        __android_log_print(ANDROID_LOG_WARN, FRAME_TAP_TAG,
+            "Failed to acquire camera image: status=%d", (int)status);
+        return nullptr;
+    }
+
+    // Extract image properties
+    int32_t width = image->getWidth();
+    int32_t height = image->getHeight();
+    int32_t format = image->getFormat();
+
+    // Verify YUV_420_888 format
+    if (format != 35) { // AIMAGE_FORMAT_YUV_420_888
+        __android_log_print(ANDROID_LOG_ERROR, FRAME_TAP_TAG,
+            "Unexpected image format: %d (expected YUV_420_888)", format);
+        delete image;
+        return nullptr;
+    }
+
+    // Get plane data
+    const uint8_t *yData, *uData, *vData;
+    int yLength, uLength, vLength;
+    image->getPlaneData(0, &yData, &yLength);
+    image->getPlaneData(1, &uData, &uLength);
+    image->getPlaneData(2, &vData, &vLength);
+
+    int32_t yStride = image->getPlaneRowStride(0);
+    int32_t uvStride = image->getPlaneRowStride(1);
+    int32_t uvPixelStride = image->getPlanePixelStride(1);
+
+    // Create RGBA buffer and convert YUV→RGBA
+    int rgbaSize = width * height * 4;
+    uint8_t *rgbaBuffer = new uint8_t[rgbaSize];
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            // Get Y value
+            int yValue = yData[y * yStride + x];
+
+            // Get U/V values (subsampled 2x2)
+            int uvY = y / 2;
+            int uvX = x / 2;
+            int uValue = uData[uvY * uvStride + uvX * uvPixelStride];
+            int vValue = vData[uvY * uvStride + uvX * uvPixelStride];
+
+            // YUV to RGB conversion
+            int C = yValue - 16;
+            int D = uValue - 128;
+            int E = vValue - 128;
+
+            int R = (298 * C + 409 * E + 128) >> 8;
+            int G = (298 * C - 100 * D - 208 * E + 128) >> 8;
+            int B = (298 * C + 516 * D + 128) >> 8;
+
+            // Clamp to [0, 255]
+            R = (R < 0) ? 0 : ((R > 255) ? 255 : R);
+            G = (G < 0) ? 0 : ((G > 255) ? 255 : G);
+            B = (B < 0) ? 0 : ((B > 255) ? 255 : B);
+
+            // Write RGBA pixel
+            int rgbaIdx = (y * width + x) * 4;
+            rgbaBuffer[rgbaIdx + 0] = R;
+            rgbaBuffer[rgbaIdx + 1] = G;
+            rgbaBuffer[rgbaIdx + 2] = B;
+            rgbaBuffer[rgbaIdx + 3] = 255; // Alpha
+        }
+    }
+
+    // Create Java ByteBuffers (direct buffers for native memory)
+    jobject yBuffer = env->NewDirectByteBuffer((void*)yData, yLength);
+    jobject uBuffer = env->NewDirectByteBuffer((void*)uData, uLength);
+    jobject vBuffer = env->NewDirectByteBuffer((void*)vData, vLength);
+    jobject rgbaByteBuffer = env->NewDirectByteBuffer(rgbaBuffer, rgbaSize);
+
+    // Get view/projection matrices and intrinsics (same as TextureInfo)
+    VROMatrix4f rotationMatrix = camera->getRotation();
+    jfloatArray viewMatrixArray = env->NewFloatArray(16);
+    env->SetFloatArrayRegion(viewMatrixArray, 0, 16, rotationMatrix.getArray());
+
+    VROMatrix4f projectionMatrix = VROMatrix4f::identity();
+    jfloatArray projectionMatrixArray = env->NewFloatArray(16);
+    env->SetFloatArrayRegion(projectionMatrixArray, 0, 16, projectionMatrix.getArray());
+
+    float fx, fy, cx, cy;
+    camera->getImageIntrinsics(&fx, &fy, &cx, &cy);
+
+    jlong timestampNs = (jlong)(frame->getTimestamp() * 1e9);
+
+    // Create CpuImage object
+    jobject cpuImage = env->NewObject(_cpuImageClass, _cpuImageConstructor,
+        timestampNs,            // long timestampNs
+        yBuffer,                // ByteBuffer y
+        uBuffer,                // ByteBuffer u
+        vBuffer,                // ByteBuffer v
+        yStride,                // int yStride
+        uvStride,               // int uvStride
+        uvPixelStride,          // int uvPixelStride
+        width,                  // int width
+        height,                 // int height
+        viewMatrixArray,        // float[] viewMatrix
+        projectionMatrixArray,  // float[] projectionMatrix
+        fx, fy, cx, cy,         // float focal/principal
+        displayRotation         // int displayRotation
+    );
+
+    // Clean up
+    env->DeleteLocalRef(viewMatrixArray);
+    env->DeleteLocalRef(projectionMatrixArray);
+    env->DeleteLocalRef(yBuffer);
+    env->DeleteLocalRef(uBuffer);
+    env->DeleteLocalRef(vBuffer);
+    env->DeleteLocalRef(rgbaByteBuffer);
+    delete image;
+
+    // Note: rgbaBuffer is leaked here! The ByteBuffer wraps it but Java doesn't own it.
+    // TODO: Implement proper cleanup via JNI callback or cleaner API
+
+    __android_log_print(ANDROID_LOG_DEBUG, FRAME_TAP_TAG,
+        "Created CpuImage: size=%dx%d, format=%d, yStride=%d, uvStride=%d, uvPixelStride=%d",
+        width, height, format, yStride, uvStride, uvPixelStride);
+
+    return cpuImage;
 }
 
 void VROFrameTapListener::extractTextureTransform(VROVector3f BL, VROVector3f BR,

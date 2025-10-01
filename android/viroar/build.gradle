@@ -62,12 +62,25 @@ task extractNativeLibraries() {
     }
 }
 
+task extractNativeLibrariesDebug() {
+    doFirst {
+        copy {
+            from zipTree('build/outputs/aar/viroar-debug.aar')
+            into('build/natives')
+            include 'jni/**/*'
+        }
+    }
+}
+
 // We have to add dependencies to Android tasks in this deferred way because these tasks
 // are dynamically generated.
 tasks.whenTaskAdded { task ->
     if (task.name == 'assembleRelease') {
         //task.dependsOn ':sharedCode:assembleRelease'
         task.finalizedBy 'extractNativeLibraries'
+    }
+    if (task.name == 'assembleDebug') {
+        task.finalizedBy 'extractNativeLibrariesDebug'
     }
 }
 

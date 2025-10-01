@@ -35,6 +35,7 @@
 #include "VROMatrix4f.h"
 #include "VROARSessionARCore.h"
 #include "VROYuvImageConverter.h"
+#include <android/log.h>
 
 VROARCameraARCore::VROARCameraARCore(arcore::Frame *frame,
                                      std::shared_ptr<VROARSessionARCore> session) :
@@ -178,6 +179,15 @@ VROVector3f VROARCameraARCore::getRotatedImageSize() {
     std::shared_ptr<VROARSessionARCore> session = _session.lock();
     if (!session) {
         return { 0, 0, 0 };
+    }
+
+    // Debug: Log raw ARCore image dimensions
+    static bool logged = false;
+    if (!logged) {
+        __android_log_print(ANDROID_LOG_ERROR, "ViroARCamera",
+            "RAW ARCore image dimensions: width=%d height=%d rotation=%d",
+            _image->getWidth(), _image->getHeight(), (int)session->getDisplayRotation());
+        logged = true;
     }
 
     switch (session->getDisplayRotation()) {

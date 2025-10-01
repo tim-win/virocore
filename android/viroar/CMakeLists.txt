@@ -7,6 +7,7 @@ SET(VIRO_AR_LIBS          ${CMAKE_SOURCE_DIR}/src/main/jniLibs)
 SET(VIRO_AR_SRC           ${CMAKE_SOURCE_DIR}/src/main/cpp)
 
 INCLUDE_DIRECTORIES(${VIRO_RENDERER_SRC}
+                    ${VIRO_RENDERER_SRC}/capi
                     ${VIRO_ANDROID_SRC}
                     ${VIRO_ANDROID_INCLUDES}/arcore/include
                     ${CMAKE_SOURCE_DIR}/../sharedCode/src/main/cpp/jni
@@ -17,7 +18,6 @@ ADD_LIBRARY(viro_arcore
 
             ${VIRO_AR_SRC}/arcore/ARCore_Native.cpp
             ${VIRO_AR_SRC}/arcore/VRORendererARCoreNative_JNI.cpp
-            ${CMAKE_SOURCE_DIR}/../sharedCode/src/main/cpp/jni/VROFrameTapListener.cpp
            )
 
 # Add pre-built libraries

@@ -64,6 +64,16 @@ VROSceneRendererARCore::VROSceneRendererARCore(VRORendererConfiguration config,
     _destroyed(false),
     _displayRotation(0) {
 
+    // BUILD MARKER: Log build timestamp for verification
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "╔══════════════════════════════════════════════════════════════════╗");
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "║  ViroCore BUILD: %s %s", __DATE__, __TIME__);
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "║  FrameTapListener API: ENABLED                                   ║");
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "╚══════════════════════════════════════════════════════════════════╝");
+
     _driver = std::make_shared<VRODriverOpenGLAndroid>(gvrAudio);
     _session = std::make_shared<VROARSessionARCore>(_driver);
 

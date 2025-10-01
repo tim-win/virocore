@@ -106,8 +106,8 @@ dependencies {
 task copyReleaseAAR(type: Copy) {
     from('build/outputs/aar')
 
-    // Change the next line to reflect the path to your viro repo
-    into('../../../viro/android/viro_renderer/')
+    // Copy to react-native-example-app's node_modules
+    into('../../../react-native-example-app/node_modules/@reactvision/react-viro/android/viro_renderer/')
     include('viroreact-release.aar')
     rename('viroreact-release.aar', 'viro_renderer-release.aar')
 }
