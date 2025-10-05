@@ -75,6 +75,7 @@ private:
     VRO_OBJECT _executor_j;           // Strong global ref to Java ExecutorService
     bool _enableCpuImages;
     std::atomic<bool> _isProcessing;  // Frame drop detection
+    int _frameCounter;                // Frame counter for periodic logging
 
     // Java class/method IDs (cached for performance)
     jclass _textureInfoClass;

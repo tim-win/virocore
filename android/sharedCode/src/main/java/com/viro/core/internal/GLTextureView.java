@@ -67,6 +67,12 @@ public class GLTextureView extends TextureView implements TextureView.SurfaceTex
     private final static boolean LOG_EGL = false;
 
     /**
+     * Shared EGL context to use when creating this view's GL context.
+     * If set, this view's context will share textures/buffers with the shared context.
+     */
+    private javax.microedition.khronos.egl.EGLContext mSharedEglContext = null;
+
+    /**
      * The renderer only renders when the surface is created, or when {@link #requestRender} is called.
      *
      * @see #getRenderMode()
@@ -211,6 +217,28 @@ public class GLTextureView extends TextureView implements TextureView.SurfaceTex
      */
     public boolean getPreserveEGLContextOnPause() {
         return mPreserveEGLContextOnPause;
+    }
+
+    /**
+     * Sets a shared EGL context for this GLTextureView.
+     * MUST be called before the view is initialized (before setRenderer).
+     *
+     * @param sharedContext EGL10 context to share resources with
+     */
+    public void setSharedEglContext(javax.microedition.khronos.egl.EGLContext sharedContext) {
+        if (mGLThread != null) {
+            throw new IllegalStateException(
+                "setSharedEglContext() must be called before GL thread starts");
+        }
+        this.mSharedEglContext = sharedContext;
+        Log.i(TAG, "Shared EGL context set: " + sharedContext);
+    }
+
+    /**
+     * Gets the shared EGL context (for verification).
+     */
+    public javax.microedition.khronos.egl.EGLContext getSharedEglContext() {
+        return mSharedEglContext;
     }
 
     /**
@@ -581,7 +609,18 @@ public class GLTextureView extends TextureView implements TextureView.SurfaceTex
             int[] attrib_list = {EGL_CONTEXT_CLIENT_VERSION, mEGLContextClientVersion,
                     EGL10.EGL_NONE };
 
-            return egl.eglCreateContext(display, config, EGL10.EGL_NO_CONTEXT,
+            // Use shared context if provided, otherwise EGL_NO_CONTEXT
+            EGLContext shareContext = (mSharedEglContext != null)
+                ? mSharedEglContext
+                : EGL10.EGL_NO_CONTEXT;
+
+            if (shareContext != EGL10.EGL_NO_CONTEXT) {
+                Log.i("DefaultContextFactory", "Creating context with SHARED context: " + shareContext);
+            } else {
+                Log.i("DefaultContextFactory", "Creating context with NO SHARING");
+            }
+
+            return egl.eglCreateContext(display, config, shareContext,
                     mEGLContextClientVersion != 0 ? attrib_list : null);
         }
 

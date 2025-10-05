@@ -18,7 +18,8 @@
 
 VROFrameTapListener::VROFrameTapListener(VRO_OBJECT listener_j, bool enableCpuImages, VRO_ENV env) :
     _enableCpuImages(enableCpuImages),
-    _isProcessing(false) {
+    _isProcessing(false),
+    _frameCounter(0) {
 
     // Create weak global ref to listener (will be checked for validity)
     _listener_j = VRO_NEW_WEAK_GLOBAL_REF(listener_j);
@@ -181,7 +182,17 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
     }
 
     // Timestamp (nanoseconds)
-    jlong timestampNs = (jlong)(frame->getTimestamp() * 1e9);
+    double frameTimestamp = frame->getTimestamp();
+    jlong timestampNs = (jlong)(frameTimestamp * 1e9);
+
+    _frameCounter++;
+    bool shouldLog = (_frameCounter == 1 || _frameCounter % 30 == 0);
+
+    if (shouldLog) {
+        __android_log_print(ANDROID_LOG_DEBUG, FRAME_TAP_TAG,
+            "[Frame %d] Timestamp: %.6f seconds -> %lld ns",
+            _frameCounter, frameTimestamp, (long long)timestampNs);
+    }
 
     // Texture dimensions - use FULL camera resolution, not cropped viewport size
     VROVector3f imageSize = camera->getRotatedImageSize();
@@ -248,9 +259,11 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
         return nullptr;
     }
 
-    __android_log_print(ANDROID_LOG_DEBUG, FRAME_TAP_TAG,
-        "Created TextureInfo: texId=%d, size=%dx%d, rotation=%d",
-        cameraTextureId, textureWidth, textureHeight, displayRotation);
+    if (shouldLog) {
+        __android_log_print(ANDROID_LOG_DEBUG, FRAME_TAP_TAG,
+            "Created TextureInfo: texId=%d, size=%dx%d, rotation=%d",
+            cameraTextureId, textureWidth, textureHeight, displayRotation);
+    }
 
     return textureInfo;
 }
@@ -379,10 +392,6 @@ jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
 
     // Note: rgbaBuffer is leaked here! The ByteBuffer wraps it but Java doesn't own it.
     // TODO: Implement proper cleanup via JNI callback or cleaner API
-
-    __android_log_print(ANDROID_LOG_DEBUG, FRAME_TAP_TAG,
-        "Created CpuImage: size=%dx%d, format=%d, yStride=%d, uvStride=%d, uvPixelStride=%d",
-        width, height, format, yStride, uvStride, uvPixelStride);
 
     return cpuImage;
 }
