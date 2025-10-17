@@ -758,7 +758,7 @@ public class ViroViewARCore extends ViroView {
         // Check for static shared context from ViroWebRTCBridge if not set directly
         if (mSharedEglContext == null) {
             try {
-                Class<?> bridgeClass = Class.forName("com.arwebrtcexample.ViroWebRTCBridge");
+                Class<?> bridgeClass = Class.forName("com.virarbridge.ViroWebRTCBridge");
                 java.lang.reflect.Method method = bridgeClass.getDeclaredMethod("getSharedEglContext");
                 mSharedEglContext = (javax.microedition.khronos.egl.EGLContext) method.invoke(null);
                 if (mSharedEglContext != null) {
@@ -766,7 +766,7 @@ public class ViroViewARCore extends ViroView {
                 }
             } catch (Exception e) {
                 // ViroWebRTCBridge not available or no shared context - continue without sharing
-                Log.d(TAG, "No static shared EGL context available");
+                Log.e(TAG, "Failed to get shared EGL context: " + e.getMessage());
             }
         }
 

@@ -167,12 +167,13 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
                                                 VROARCameraARCore *camera,
                                                 int cameraTextureId,
                                                 int displayRotation) {
-    // Check if camera is tracking - ARCore must be initialized before accessing image data
-    if (camera->getTrackingState() != VROARTrackingState::Normal) {
-        __android_log_print(ANDROID_LOG_WARN, FRAME_TAP_TAG,
-            "Skipping frame - camera not tracking (state: %d)", camera->getTrackingState());
-        return nullptr;
-    }
+    // REMOVED tracking state check - camera texture is valid immediately, even without full AR tracking
+    // The AR scene can render and camera frames exist regardless of tracking state.
+    // if (camera->getTrackingState() != VROARTrackingState::Normal) {
+    //     __android_log_print(ANDROID_LOG_WARN, FRAME_TAP_TAG,
+    //         "Skipping frame - camera not tracking (state: %d)", camera->getTrackingState());
+    //     return nullptr;
+    // }
 
     // Acquire ARCore camera image data (required for getImageSize())
     if (!camera->loadImageData()) {
