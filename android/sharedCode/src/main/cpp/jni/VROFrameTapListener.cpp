@@ -225,9 +225,79 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
     jfloatArray projectionMatrixArray = env->NewFloatArray(16);
     env->SetFloatArrayRegion(projectionMatrixArray, 0, 16, projectionMatrix.getArray());
 
-    // Camera intrinsics
+    // Camera intrinsics - get raw values from ARCore (in landscape coordinates)
     float fx, fy, cx, cy;
     camera->getImageIntrinsics(&fx, &fy, &cx, &cy);
+
+    // Rotate intrinsics to match the rotated image dimensions
+    // ARCore always provides intrinsics for landscape orientation (e.g., 1920x1080)
+    // When displaying in portrait, we need to rotate the principal point (cx, cy)
+    // and swap the focal lengths (fx, fy) to match the rotated coordinate system.
+    //
+    // displayRotation values (Surface.ROTATION_X):
+    //   0 = Portrait (90° CCW from landscape)
+    //   1 = Landscape (no rotation)
+    //   2 = Portrait upside-down (90° CW from landscape)
+    //   3 = Reverse landscape (180° rotation)
+    //
+    // Get raw (unrotated) image dimensions for the rotation calculation
+    // Note: imageSize already contains rotated dimensions, so we need the raw ones
+    VROVector3f rawSize = camera->getRotatedImageSize();
+    float rawW, rawH;
+    if (displayRotation == 0 || displayRotation == 2) {
+        // Portrait mode - rawSize has swapped dimensions, swap back to get original
+        rawW = rawSize.y;  // Original landscape width
+        rawH = rawSize.x;  // Original landscape height
+    } else {
+        // Landscape mode - dimensions are not swapped
+        rawW = rawSize.x;
+        rawH = rawSize.y;
+    }
+
+    switch (displayRotation) {
+        case 0: {
+            // Portrait: 90° CCW rotation
+            // Point (x,y) in WxH -> (y, W-x) in HxW
+            float new_cx = cy;
+            float new_cy = rawW - cx;
+            // Focal lengths swap because X/Y axes swap
+            float new_fx = fy;
+            float new_fy = fx;
+            cx = new_cx;
+            cy = new_cy;
+            fx = new_fx;
+            fy = new_fy;
+            break;
+        }
+        case 2: {
+            // Portrait upside-down: 90° CW rotation (270° CCW)
+            // Point (x,y) in WxH -> (H-y, x) in HxW
+            float new_cx = rawH - cy;
+            float new_cy = cx;
+            float new_fx = fy;
+            float new_fy = fx;
+            cx = new_cx;
+            cy = new_cy;
+            fx = new_fx;
+            fy = new_fy;
+            break;
+        }
+        case 3: {
+            // Reverse landscape: 180° rotation
+            // Point (x,y) in WxH -> (W-x, H-y) in WxH
+            cx = rawW - cx;
+            cy = rawH - cy;
+            // Focal lengths don't swap for 180° rotation
+            break;
+        }
+        // case 1: Normal landscape - no transformation needed
+    }
+
+    if (shouldLog) {
+        __android_log_print(ANDROID_LOG_DEBUG, FRAME_TAP_TAG,
+            "[Frame %d] Intrinsics: fx=%.1f fy=%.1f cx=%.1f cy=%.1f (rotation=%d)",
+            _frameCounter, fx, fy, cx, cy, displayRotation);
+    }
 
     // Create TextureInfo object
     // Constructor signature: (long, int, int, int, float[], int, int, float, float[], float[], float, float, float, float, int)
@@ -362,6 +432,47 @@ jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
 
     float fx, fy, cx, cy;
     camera->getImageIntrinsics(&fx, &fy, &cx, &cy);
+
+    // Rotate intrinsics to match display orientation (same logic as createTextureInfo)
+    // Note: CpuImage uses raw ARCore dimensions (width, height), but for consistency
+    // with how the data will be processed, we rotate the intrinsics to match the
+    // display orientation.
+    float rawW = (float)width;   // Raw ARCore image width (landscape)
+    float rawH = (float)height;  // Raw ARCore image height (landscape)
+
+    switch (displayRotation) {
+        case 0: {
+            // Portrait: 90° CCW rotation
+            float new_cx = cy;
+            float new_cy = rawW - cx;
+            float new_fx = fy;
+            float new_fy = fx;
+            cx = new_cx;
+            cy = new_cy;
+            fx = new_fx;
+            fy = new_fy;
+            break;
+        }
+        case 2: {
+            // Portrait upside-down: 90° CW rotation
+            float new_cx = rawH - cy;
+            float new_cy = cx;
+            float new_fx = fy;
+            float new_fy = fx;
+            cx = new_cx;
+            cy = new_cy;
+            fx = new_fx;
+            fy = new_fy;
+            break;
+        }
+        case 3: {
+            // Reverse landscape: 180° rotation
+            cx = rawW - cx;
+            cy = rawH - cy;
+            break;
+        }
+        // case 1: Normal landscape - no transformation needed
+    }
 
     jlong timestampNs = (jlong)(frame->getTimestamp() * 1e9);
 
