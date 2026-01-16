@@ -4,6 +4,9 @@
 /ios/ViroRenderer.xcworkspace/xcshareddata/**
 /ios/Pods/Pods.xcodeproj/xcuserdata/**
 /ios/Pods/
+/ios/ViroKit.framework/
+/ios/build/
+/ios/Podfile.lock
 .DS_Store
 
 # Macos
