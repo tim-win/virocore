@@ -48,6 +48,7 @@ class VROARFrame;
 class VRORendererConfiguration;
 class VROARSessionARCore;
 class VROShaderModifier;
+class VROFrameTapListener;
 
 class VROSceneRendererARCore : public VROSceneRenderer, public std::enable_shared_from_this<VROSceneRendererARCore> {
 
@@ -160,6 +161,16 @@ public:
      */
     void setSemanticConfidenceThreshold(float threshold);
 
+    /*
+     Set a frame tap listener to receive pre-viewport camera frames.
+     */
+    void setFrameTapListener(std::shared_ptr<VROFrameTapListener> listener);
+
+    /*
+     Clear the frame tap listener.
+     */
+    void clearFrameTapListener();
+
 private:
 
     void updateBackgroundSemanticsDebug();
@@ -195,6 +206,10 @@ private:
 
     std::shared_ptr<VRONode> _pointOfView;
     std::shared_ptr<VROARSessionARCore> _session;
+
+    // Frame tap listener for pre-viewport frame access
+    std::shared_ptr<VROFrameTapListener> _frameTapListener;
+    int _displayRotation = 0;
 };
 
 #endif  // VRO_SCENE_RENDERER_ARCORE_H  // NOLINT

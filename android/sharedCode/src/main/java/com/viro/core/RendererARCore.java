@@ -111,6 +111,10 @@ public class RendererARCore extends Renderer {
         nativeSetSemanticConfidenceThreshold(mNativeRef, threshold);
     }
 
+    public void setFrameTapListener(FrameTapListener listener, boolean enableCpuImages) {
+        nativeSetFrameTapListener(mNativeRef, listener, enableCpuImages);
+    }
+
     private native long nativeCreateRendererARCore(ClassLoader appClassLoader, Context context,
                                                    AssetManager assets, PlatformUtil platformUtil,
                                                    boolean enableShadows, boolean enableHDR, boolean enablePBR, boolean enableBloom);
@@ -129,4 +133,5 @@ public class RendererARCore extends Renderer {
     private native boolean nativeisCameraAutoFocusEnabled(long nativeRenderer);
     private native void nativeSetSemanticDebugEnabled(long nativeRenderer, boolean enabled);
     private native void nativeSetSemanticConfidenceThreshold(long nativeRenderer, float threshold);
+    private native void nativeSetFrameTapListener(long nativeRenderer, FrameTapListener listener, boolean enableCpuImages);
 }

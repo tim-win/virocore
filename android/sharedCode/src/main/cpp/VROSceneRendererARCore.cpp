@@ -52,6 +52,7 @@
 #include "VROInputControllerCardboard.h"
 #include "VROAllocationTracker.h"
 #include "VROInputControllerARAndroid.h"
+#include "jni/VROFrameTapListener.h"
 #include "VROShaderModifier.h"
 #include "VROShaderFactory.h"
 #include "VROMaterial.h"
@@ -65,6 +66,16 @@ VROSceneRendererARCore::VROSceneRendererARCore(VRORendererConfiguration config,
                                                std::shared_ptr<gvr::AudioApi> gvrAudio) :
     _arcoreInstalled(false),
     _destroyed(false) {
+
+    // BUILD MARKER: Log build timestamp for verification
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "╔══════════════════════════════════════════════════════════════════╗");
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "║  ViroCore BUILD: %s %s", __DATE__, __TIME__);
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "║  FrameTapListener API: ENABLED                                   ║");
+    __android_log_print(ANDROID_LOG_INFO, "ViroCore",
+        "╚══════════════════════════════════════════════════════════════════╝");
 
     _driver = std::make_shared<VRODriverOpenGLAndroid>(gvrAudio);
     _session = std::make_shared<VROARSessionARCore>(_driver);
@@ -142,6 +153,16 @@ void VROSceneRendererARCore::renderFrame() {
 
     _session->setViewport(viewport);
     std::unique_ptr<VROARFrame> &frame = _session->updateFrame();
+
+    // Dispatch frame to tap listener (if registered) BEFORE viewport rendering
+    if (_frameTapListener && _frameTapListener->isValid()) {
+        VROARFrameARCore *arcoreFrame = dynamic_cast<VROARFrameARCore*>(frame.get());
+        if (arcoreFrame) {
+            int cameraTextureId = (int)_session->getCameraTextureId();
+            _frameTapListener->dispatchFrame(arcoreFrame, cameraTextureId, _displayRotation);
+        }
+    }
+
     updateARBackground(frame, backgroundNeedsReset);
 
     // Notify the current ARScene with the ARCamera's tracking state.
@@ -691,7 +712,16 @@ std::vector<std::shared_ptr<VROARHitTestResult>> VROSceneRendererARCore::perform
 }
 
 void VROSceneRendererARCore::setDisplayGeometry(int rotation, int width, int height) {
+    _displayRotation = rotation;
     _session->setDisplayGeometry((VROARDisplayRotation) rotation, width, height);
+}
+
+void VROSceneRendererARCore::setFrameTapListener(std::shared_ptr<VROFrameTapListener> listener) {
+    _frameTapListener = listener;
+}
+
+void VROSceneRendererARCore::clearFrameTapListener() {
+    _frameTapListener.reset();
 }
 
 void VROSceneRendererARCore::setCameraAutoFocusEnabled(bool enabled) {

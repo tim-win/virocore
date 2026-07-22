@@ -65,6 +65,12 @@ public:
     void getImageIntrinsics(float *outFx, float *outFy, float *outCx, float *outCy);
 
     /*
+     Load the image data from ARCore, and stores it in _image. Public so the
+     frame-tap listener (VROFrameTapListener) can populate CPU images on demand.
+     */
+    bool loadImageData();
+
+    /*
      Retrieve the rotated camera image data in RGBA, rotated to display orientation but NOT cropped
      to the viewport (i.e. the full field of view). Use getRotatedImageSize() to size the buffer.
      This is what on-device ML (e.g. the object detector) should consume: cropping to the viewport
@@ -89,10 +95,6 @@ private:
     VROVector3f _position;
     VROMatrix4f _rotation;
 
-    /*
-     Load the image data from ARCore, and stores it in _image.
-     */
-    bool loadImageData();
 
     /*
     Retrieve the cropping rectangle to use on the rotated image data to get the cropped image
