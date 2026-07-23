@@ -667,6 +667,81 @@ public class ViroViewARCore extends ViroView {
         return true;
     }
 
+    // ---------------------------------------------------------------------
+    // ItemMap frame-tap port: shared EGL context for texture sharing with
+    // WebRTC. Without this, the renderer's GL context lives in its own share
+    // group, and the OES camera texture id handed to the FrameTapListener is
+    // meaningless in WebRTC's context — the capturer samples black while the
+    // on-screen preview looks perfect (exactly the 2026-07-23 black-frame
+    // regression: the v2.57.3 port carried the FrameTapListener API but
+    // missed this hook).
+    // ---------------------------------------------------------------------
+
+    // Shared EGL context for texture sharing with WebRTC
+    private javax.microedition.khronos.egl.EGLContext mSharedEglContext = null;
+
+    /**
+     * Sets a shared EGL context to enable texture sharing with other GL contexts.
+     * MUST be called before the AR session starts (before GL context creation).
+     *
+     * @param sharedContext EGL10 context to share resources with
+     */
+    public void setSharedEglContext(javax.microedition.khronos.egl.EGLContext sharedContext) {
+        if (mSurfaceView != null) {
+            throw new IllegalStateException(
+                "setSharedEglContext() must be called before GLSurfaceView is created");
+        }
+        this.mSharedEglContext = sharedContext;
+        Log.i(TAG, "Shared EGL context set for ViroViewARCore: " + sharedContext);
+    }
+
+    /**
+     * Custom EGL context factory for creating shared contexts.
+     * Based on MediaPipe's approach and Stack Overflow examples.
+     */
+    private static class SharedEGLContextFactory implements GLSurfaceView.EGLContextFactory {
+        private static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
+        private final javax.microedition.khronos.egl.EGLContext mSharedContext;
+
+        public SharedEGLContextFactory(javax.microedition.khronos.egl.EGLContext sharedContext) {
+            this.mSharedContext = sharedContext;
+        }
+
+        @Override
+        public EGLContext createContext(EGL10 egl, EGLDisplay display, EGLConfig eglConfig) {
+            int[] attrib_list = {
+                EGL_CONTEXT_CLIENT_VERSION, 3,  // Match ViroCore's GL ES 3.0
+                EGL10.EGL_NONE
+            };
+
+            EGLContext shareContext = (mSharedContext != null)
+                ? mSharedContext
+                : EGL10.EGL_NO_CONTEXT;
+
+            if (shareContext != EGL10.EGL_NO_CONTEXT) {
+                Log.i(TAG, "Creating GL context with SHARED context: " + shareContext);
+            } else {
+                Log.i(TAG, "Creating GL context with NO SHARING");
+            }
+
+            EGLContext context = egl.eglCreateContext(display, eglConfig, shareContext, attrib_list);
+
+            if (context == null || context == EGL10.EGL_NO_CONTEXT) {
+                int error = egl.eglGetError();
+                throw new RuntimeException("eglCreateContext failed: 0x" + Integer.toHexString(error));
+            }
+
+            return context;
+        }
+
+        @Override
+        public void destroyContext(EGL10 egl, EGLDisplay display, EGLContext context) {
+            if (!egl.eglDestroyContext(display, context)) {
+                Log.e(TAG, "eglDestroyContext failed: 0x" + Integer.toHexString(egl.eglGetError()));
+            }
+        }
+    }
+
     /**
      * Initialize this {@link GLSurfaceView}.
      */
@@ -674,6 +749,28 @@ public class ViroViewARCore extends ViroView {
         mSurfaceView.setEGLContextClientVersion(3);
         mSurfaceView.setEGLConfigChooser(new ViroEGLConfigChooser(mRendererConfig.isMultisamplingEnabled()));
         mSurfaceView.setPreserveEGLContextOnPause(true);
+
+        // Check for static shared context from ViroWebRTCBridge if not set directly
+        if (mSharedEglContext == null) {
+            try {
+                Class<?> bridgeClass = Class.forName("com.virarbridge.ViroWebRTCBridge");
+                java.lang.reflect.Method method = bridgeClass.getDeclaredMethod("getSharedEglContext");
+                mSharedEglContext = (javax.microedition.khronos.egl.EGLContext) method.invoke(null);
+                if (mSharedEglContext != null) {
+                    Log.i(TAG, "Using static shared EGL context from ViroWebRTCBridge: " + mSharedEglContext);
+                }
+            } catch (Exception e) {
+                // ViroWebRTCBridge not available or no shared context - continue without sharing
+                Log.e(TAG, "Failed to get shared EGL context: " + e.getMessage());
+            }
+        }
+
+        // Set custom EGL context factory if shared context is provided
+        if (mSharedEglContext != null) {
+            mSurfaceView.setEGLContextFactory(new SharedEGLContextFactory(mSharedEglContext));
+            Log.i(TAG, "✅ EGL CONTEXT SHARING ENABLED - ViroCore will share textures");
+        }
+
         mSurfaceView.setEGLWindowSurfaceFactory(new ViroEGLWindowSurfaceFactory());
 
         mSurfaceView.setRenderer(new ViroARRenderer(this));
