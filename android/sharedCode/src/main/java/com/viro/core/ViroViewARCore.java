@@ -287,6 +287,27 @@ public class ViroViewARCore extends ViroView {
                 Log.i(TAG, "Driver reporting sRGB framebuffer *not* acquired [colorspace " + value[0] + "]");
             }
 
+            // LOG GL VERSION FOR CONTEXT SHARING INVESTIGATION (ItemMap port).
+            // "Shared EGL Context: null" here means WebRTC texture sharing is
+            // OFF for this session — every captured frame will be black even
+            // though the preview renders. This is the per-session tripwire for
+            // the 2026-07-23 black-frame regression class.
+            String glVersion = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_VERSION);
+            String glRenderer = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER);
+            int[] glMajorVersion = new int[1];
+            int[] glMinorVersion = new int[1];
+            android.opengl.GLES30.glGetIntegerv(android.opengl.GLES30.GL_MAJOR_VERSION, glMajorVersion, 0);
+            android.opengl.GLES30.glGetIntegerv(android.opengl.GLES30.GL_MINOR_VERSION, glMinorVersion, 0);
+
+            Log.i(TAG, "═══════════════════════════════════════════════════");
+            Log.i(TAG, "🔍 VIROCORE GL CONTEXT INFO:");
+            Log.i(TAG, "   GL_VERSION: " + glVersion);
+            Log.i(TAG, "   GL_RENDERER: " + glRenderer);
+            Log.i(TAG, "   GL_MAJOR_VERSION: " + glMajorVersion[0]);
+            Log.i(TAG, "   GL_MINOR_VERSION: " + glMinorVersion[0]);
+            Log.i(TAG, "   Shared EGL Context: " + view.mSharedEglContext);
+            Log.i(TAG, "═══════════════════════════════════════════════════");
+
             view.mNativeRenderer.onSurfaceCreated(view.mSurfaceView.getHolder().getSurface());
             view.mNativeRenderer.initializeGL(sRGBFramebuffer);
             view.mRendererSurfaceInitialized.set(true);
