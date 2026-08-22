@@ -141,7 +141,8 @@ void VROFrameTapListener::dispatchFrame(VROARFrameARCore *frame,
 
     // CPU image path (optional)
     if (_enableCpuImages) {
-        jobject cpuImage = createCpuImage(env, frame, camera, displayRotation);
+        arcore::Image *cpuImageSource = nullptr;
+        jobject cpuImage = createCpuImage(env, frame, camera, displayRotation, &cpuImageSource);
         if (cpuImage) {
             try {
                 env->CallVoidMethod(listenerRef, _onCpuImageFrameMethod, cpuImage);
@@ -155,6 +156,9 @@ void VROFrameTapListener::dispatchFrame(VROARFrameARCore *frame,
             }
             VRO_DELETE_LOCAL_REF(cpuImage);
         }
+        // Release the ARCore image only now: the Java callback read the plane
+        // buffers synchronously above, and they alias this image's memory.
+        delete cpuImageSource;
     }
 
     VRO_DELETE_LOCAL_REF(textureInfo);
@@ -342,7 +346,10 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
 jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
                                             VROARFrameARCore *frame,
                                             VROARCameraARCore *camera,
-                                            int displayRotation) {
+                                            int displayRotation,
+                                            arcore::Image **outImage) {
+    *outImage = nullptr;
+
     // Get ARCore camera image
     arcore::Image *image = nullptr;
     arcore::ImageRetrievalStatus status = frame->getFrameInternal()->acquireCameraImage(&image);
@@ -377,49 +384,21 @@ jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
     int32_t uvStride = image->getPlaneRowStride(1);
     int32_t uvPixelStride = image->getPlanePixelStride(1);
 
-    // Create RGBA buffer and convert YUV→RGBA
-    int rgbaSize = width * height * 4;
-    uint8_t *rgbaBuffer = new uint8_t[rgbaSize];
-
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            // Get Y value
-            int yValue = yData[y * yStride + x];
-
-            // Get U/V values (subsampled 2x2)
-            int uvY = y / 2;
-            int uvX = x / 2;
-            int uValue = uData[uvY * uvStride + uvX * uvPixelStride];
-            int vValue = vData[uvY * uvStride + uvX * uvPixelStride];
-
-            // YUV to RGB conversion
-            int C = yValue - 16;
-            int D = uValue - 128;
-            int E = vValue - 128;
-
-            int R = (298 * C + 409 * E + 128) >> 8;
-            int G = (298 * C - 100 * D - 208 * E + 128) >> 8;
-            int B = (298 * C + 516 * D + 128) >> 8;
-
-            // Clamp to [0, 255]
-            R = (R < 0) ? 0 : ((R > 255) ? 255 : R);
-            G = (G < 0) ? 0 : ((G > 255) ? 255 : G);
-            B = (B < 0) ? 0 : ((B > 255) ? 255 : B);
-
-            // Write RGBA pixel
-            int rgbaIdx = (y * width + x) * 4;
-            rgbaBuffer[rgbaIdx + 0] = R;
-            rgbaBuffer[rgbaIdx + 1] = G;
-            rgbaBuffer[rgbaIdx + 2] = B;
-            rgbaBuffer[rgbaIdx + 3] = 255; // Alpha
-        }
-    }
+    // NOTE (2026-08-22): a full per-pixel YUV→RGBA conversion used to live here.
+    // It allocated width*height*4 bytes per frame, wrapped them in a direct
+    // ByteBuffer... and then never passed that buffer to the CpuImage
+    // constructor (see the signature above: 3 ByteBuffers only, y/u/v). Nothing
+    // on the Java side ever read it — CpuImage has no rgba field, and
+    // ViroWebRTCBridge does its own yuvToBitmap from the y/u/v planes. So every
+    // frame paid a full-frame integer-math double loop AND leaked the buffer
+    // (8.3 MB/frame at 1080p, 33 MB/frame at 4K). Deleted outright rather than
+    // "fixed" with a free() — the correct amount of this work is zero. This is
+    // what made the CPU-image tap unusable for a continuous frame roll.
 
     // Create Java ByteBuffers (direct buffers for native memory)
     jobject yBuffer = env->NewDirectByteBuffer((void*)yData, yLength);
     jobject uBuffer = env->NewDirectByteBuffer((void*)uData, uLength);
     jobject vBuffer = env->NewDirectByteBuffer((void*)vData, vLength);
-    jobject rgbaByteBuffer = env->NewDirectByteBuffer(rgbaBuffer, rgbaSize);
 
     // Get view/projection matrices and intrinsics (same as TextureInfo)
     VROMatrix4f rotationMatrix = camera->getRotation();
@@ -499,11 +478,10 @@ jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
     env->DeleteLocalRef(yBuffer);
     env->DeleteLocalRef(uBuffer);
     env->DeleteLocalRef(vBuffer);
-    env->DeleteLocalRef(rgbaByteBuffer);
-    delete image;
 
-    // Note: rgbaBuffer is leaked here! The ByteBuffer wraps it but Java doesn't own it.
-    // TODO: Implement proper cleanup via JNI callback or cleaner API
+    // Hand ownership to the caller — the buffers above alias this image, so it
+    // must outlive the Java callback (see the header note).
+    *outImage = image;
 
     return cpuImage;
 }

@@ -37,6 +37,10 @@
 class VROARFrameARCore;
 class VROARCameraARCore;
 
+namespace arcore {
+    class Image;
+}
+
 /**
  * VROFrameTapListener bridges C++ ARCore frame data to Java FrameTapListener callbacks.
  * This provides access to full-resolution camera frames before viewport rendering.
@@ -97,11 +101,18 @@ private:
 
     /**
      * Create a Java CpuImage object from ARCore frame data (if available).
+     *
+     * The returned CpuImage holds direct ByteBuffers that alias the ARCore
+     * image's plane memory — it does NOT copy. Ownership of the acquired
+     * arcore::Image is therefore handed back via outImage, and the caller MUST
+     * delete it only AFTER the Java callback has returned. Releasing it any
+     * earlier hands Java buffers over freed/recycled camera-pool memory.
      */
     jobject createCpuImage(VRO_ENV env,
                            VROARFrameARCore *frame,
                            VROARCameraARCore *camera,
-                           int displayRotation);
+                           int displayRotation,
+                           arcore::Image **outImage);
 
     /**
      * Extract texture transform matrix from ARCore background texture coordinates.
