@@ -323,6 +323,9 @@ namespace arcore {
         virtual void getViewMatrix(float *outMatrix) = 0;
         virtual void getProjectionMatrix(float near, float far, float *outMatrix) = 0;
         virtual void getImageIntrinsics(float *outFx, float *outFy, float *outCx, float *outCy) = 0;
+        // CPU-image dimensions from camera metadata (ArCameraIntrinsics) —
+        // does NOT acquire the CPU image, safe to call every frame.
+        virtual void getImageDimensions(int32_t *outWidth, int32_t *outHeight) = 0;
         virtual TrackingState getTrackingState() = 0;
         virtual TrackingFailureReason getTrackingFailureReason() = 0;
         virtual void getLightEstimate(LightEstimate *outLightEstimate) = 0;

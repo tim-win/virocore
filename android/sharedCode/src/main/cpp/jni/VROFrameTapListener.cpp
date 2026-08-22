@@ -179,11 +179,24 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
     //     return nullptr;
     // }
 
-    // Acquire ARCore camera image data (required for getImageSize())
-    if (!camera->loadImageData()) {
-        __android_log_print(ANDROID_LOG_WARN, FRAME_TAP_TAG,
-            "Skipping frame - failed to acquire camera image data");
-        return nullptr;
+    // Image dimensions come from camera metadata (ArCameraIntrinsics), NOT
+    // from acquiring the CPU image. The previous loadImageData() here called
+    // ArFrame_acquireCameraImage on EVERY camera frame (30Hz) just to read
+    // getImageSize() — exhausting ARCore's small CPU-image pool (~50% acquire
+    // failures), keeping the camera HAL's YUV stream hot, starving VIO into
+    // tracking flaps, and cooking the device to thermal-critical during the
+    // pre-scan wizard. Dims never change within a session, so fetch once.
+    if (_cachedImageWidth <= 0 || _cachedImageHeight <= 0) {
+        frame->getFrameInternal()->getImageDimensions(&_cachedImageWidth,
+                                                      &_cachedImageHeight);
+        if (_cachedImageWidth <= 0 || _cachedImageHeight <= 0) {
+            __android_log_print(ANDROID_LOG_WARN, FRAME_TAP_TAG,
+                "Skipping frame - camera image dimensions not yet available");
+            return nullptr;
+        }
+        __android_log_print(ANDROID_LOG_INFO, FRAME_TAP_TAG,
+            "Camera image dimensions (landscape): %dx%d",
+            _cachedImageWidth, _cachedImageHeight);
     }
 
     // Timestamp (nanoseconds)
@@ -199,10 +212,12 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
             _frameCounter, frameTimestamp, (long long)timestampNs);
     }
 
-    // Texture dimensions - use FULL camera resolution, not cropped viewport size
-    VROVector3f imageSize = camera->getRotatedImageSize();
-    jint textureWidth = (jint)imageSize.x;
-    jint textureHeight = (jint)imageSize.y;
+    // Texture dimensions - full camera resolution rotated to display
+    // orientation (portrait swaps the landscape metadata dims), matching what
+    // getRotatedImageSize() used to return from the acquired CPU image.
+    bool isPortrait = (displayRotation == 0 || displayRotation == 2);
+    jint textureWidth = isPortrait ? (jint)_cachedImageHeight : (jint)_cachedImageWidth;
+    jint textureHeight = isPortrait ? (jint)_cachedImageWidth : (jint)_cachedImageHeight;
 
     if (textureWidth <= 0 || textureHeight <= 0) {
         __android_log_print(ANDROID_LOG_ERROR, FRAME_TAP_TAG,
@@ -229,9 +244,13 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
     jfloatArray projectionMatrixArray = env->NewFloatArray(16);
     env->SetFloatArrayRegion(projectionMatrixArray, 0, 16, projectionMatrix.getArray());
 
-    // Camera intrinsics - get raw values from ARCore (in landscape coordinates)
-    float fx, fy, cx, cy;
-    camera->getImageIntrinsics(&fx, &fy, &cx, &cy);
+    // Camera intrinsics - get raw values from ARCore (in landscape coordinates).
+    // Deliberately NOT camera->getImageIntrinsics(): that wrapper calls
+    // loadImageData() (a per-frame CPU image acquire) and silently leaves these
+    // uninitialized when tracking is lost. The direct metadata call needs no
+    // image and always fills them.
+    float fx = 0, fy = 0, cx = 0, cy = 0;
+    frame->getFrameInternal()->getImageIntrinsics(&fx, &fy, &cx, &cy);
 
     // Rotate intrinsics to match the rotated image dimensions
     // ARCore always provides intrinsics for landscape orientation (e.g., 1920x1080)
@@ -244,19 +263,10 @@ jobject VROFrameTapListener::createTextureInfo(VRO_ENV env,
     //   2 = Portrait upside-down (90° CW from landscape)
     //   3 = Reverse landscape (180° rotation)
     //
-    // Get raw (unrotated) image dimensions for the rotation calculation
-    // Note: imageSize already contains rotated dimensions, so we need the raw ones
-    VROVector3f rawSize = camera->getRotatedImageSize();
-    float rawW, rawH;
-    if (displayRotation == 0 || displayRotation == 2) {
-        // Portrait mode - rawSize has swapped dimensions, swap back to get original
-        rawW = rawSize.y;  // Original landscape width
-        rawH = rawSize.x;  // Original landscape height
-    } else {
-        // Landscape mode - dimensions are not swapped
-        rawW = rawSize.x;
-        rawH = rawSize.y;
-    }
+    // Raw (unrotated, landscape) image dimensions for the rotation
+    // calculation — from the cached camera metadata, no image acquire.
+    float rawW = (float)_cachedImageWidth;
+    float rawH = (float)_cachedImageHeight;
 
     switch (displayRotation) {
         case 0: {
@@ -409,8 +419,10 @@ jobject VROFrameTapListener::createCpuImage(VRO_ENV env,
     jfloatArray projectionMatrixArray = env->NewFloatArray(16);
     env->SetFloatArrayRegion(projectionMatrixArray, 0, 16, projectionMatrix.getArray());
 
-    float fx, fy, cx, cy;
-    camera->getImageIntrinsics(&fx, &fy, &cx, &cy);
+    // Direct metadata call — same rationale as createTextureInfo (no image
+    // dependency, always initialized).
+    float fx = 0, fy = 0, cx = 0, cy = 0;
+    frame->getFrameInternal()->getImageIntrinsics(&fx, &fy, &cx, &cy);
 
     // Rotate intrinsics to match display orientation (same logic as createTextureInfo)
     // Note: CpuImage uses raw ARCore dimensions (width, height), but for consistency

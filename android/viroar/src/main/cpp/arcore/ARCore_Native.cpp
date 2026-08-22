@@ -620,6 +620,17 @@ namespace arcore {
         ArCameraIntrinsics_destroy(outIntrinsics);
     }
 
+    void FrameNative::getImageDimensions(int32_t *outWidth, int32_t *outHeight) {
+        ArCamera *camera;
+        ArFrame_acquireCamera(_session, _frame, &camera);
+        ArCameraIntrinsics *intrinsics;
+        ArCameraIntrinsics_create(_session, &intrinsics);
+        ArCamera_getImageIntrinsics(_session, camera, intrinsics);
+        ArCameraIntrinsics_getImageDimensions(_session, intrinsics, outWidth, outHeight);
+        ArCamera_release(camera);
+        ArCameraIntrinsics_destroy(intrinsics);
+    }
+
     TrackingState FrameNative::getTrackingState() {
         ArCamera *camera;
         ArFrame_acquireCamera(_session, _frame, &camera);

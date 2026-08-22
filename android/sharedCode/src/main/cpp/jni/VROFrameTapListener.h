@@ -80,6 +80,9 @@ private:
     bool _enableCpuImages;
     std::atomic<bool> _isProcessing;  // Frame drop detection
     int _frameCounter;                // Frame counter for periodic logging
+    int32_t _cachedImageWidth = 0;    // Landscape CPU-image dims from camera
+    int32_t _cachedImageHeight = 0;   // metadata; fetched once (never change
+                                      // within a session), 0 = not yet known
 
     // Java class/method IDs (cached for performance)
     jclass _textureInfoClass;
