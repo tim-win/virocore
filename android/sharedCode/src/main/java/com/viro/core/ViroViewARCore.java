@@ -752,15 +752,36 @@ public class ViroViewARCore extends ViroView {
                 throw new RuntimeException("eglCreateContext failed: 0x" + Integer.toHexString(error));
             }
 
+            sRendererEglContext = context;
             return context;
         }
 
         @Override
         public void destroyContext(EGL10 egl, EGLDisplay display, EGLContext context) {
+            if (sRendererEglContext == context) {
+                sRendererEglContext = null;
+            }
             if (!egl.eglDestroyContext(display, context)) {
                 Log.e(TAG, "eglDestroyContext failed: 0x" + Integer.toHexString(egl.eglGetError()));
             }
         }
+    }
+
+    /**
+     * The renderer's live EGL context, captured at creation so external frame
+     * consumers (the ingest GPU reader) can create contexts that share WITH
+     * the renderer — instead of the renderer joining an app-lifetime share
+     * group. GL resources live until the LAST context of a share group dies:
+     * when Viro's context was a child of WebRTC's immortal root context,
+     * every renderer teardown stranded its textures/FBOs in the surviving
+     * group (~170MB leaked per scan-screen mount, measured). With the
+     * renderer standalone and readers sharing FROM it, renderer death
+     * reclaims the whole group. Null when no renderer context is live.
+     */
+    private static volatile EGLContext sRendererEglContext = null;
+
+    public static EGLContext getRendererEglContext() {
+        return sRendererEglContext;
     }
 
     /**
@@ -786,9 +807,14 @@ public class ViroViewARCore extends ViroView {
             }
         }
 
-        // Set custom EGL context factory if shared context is provided
+        // Always install the custom factory: it captures the created context
+        // in sRendererEglContext so the ingest GPU reader can share FROM the
+        // renderer. mSharedEglContext is expected to be null now (standalone
+        // renderer — see sRendererEglContext docs for why parenting the
+        // renderer to an app-lifetime context leaked a renderer per mount);
+        // passing one through still works for legacy callers.
+        mSurfaceView.setEGLContextFactory(new SharedEGLContextFactory(mSharedEglContext));
         if (mSharedEglContext != null) {
-            mSurfaceView.setEGLContextFactory(new SharedEGLContextFactory(mSharedEglContext));
             Log.i(TAG, "✅ EGL CONTEXT SHARING ENABLED - ViroCore will share textures");
         }
 
