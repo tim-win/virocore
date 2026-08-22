@@ -937,6 +937,14 @@ public class ViroViewARCore extends ViroView {
      */
     @Override
     public void onActivityPaused(Activity activity) {
+        if (mNativeRenderer == null || mSurfaceView == null) {
+            // Already disposed. Every sibling lifecycle method carries this
+            // guard; its absence here crashed the app post-scan: the explicit
+            // disposeArView() (which nulls these fields) can land BEFORE the
+            // screen stack's pop-animation end delivers the navigator's
+            // deferred onDetachedFromWindow -> onActivityPaused.
+            return;
+        }
         if (mWeakActivity.get() != activity) {
             return;
         }
