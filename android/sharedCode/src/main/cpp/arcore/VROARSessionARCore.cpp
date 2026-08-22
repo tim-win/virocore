@@ -195,8 +195,18 @@ VROARSessionARCore::~VROARSessionARCore() {
     // Deleting the session could take a few seconds, so to prevent blocking the
     // main thread, they recommend pausing the session, then deleting on a
     // background thread!
+    //
+    // Capture the POINTER, never `this`: this object is fully destroyed the
+    // moment the destructor returns, so a [this] lambda reading _session on
+    // the background pool is a use-after-free. It crashed for real
+    // (2026-08-22, SIGSEGV in VROPlatformRunTask ~7s after scan-screen
+    // unmount, fault addr = reused float data) once teardown kept the task
+    // pool busy long enough for the freed memory to be reused before the
+    // task ran.
     _session->pause();
-    VROPlatformDispatchAsyncBackground([this] { delete (_session); });
+    arcore::Session *sessionToDelete = _session;
+    _session = nullptr;
+    VROPlatformDispatchAsyncBackground([sessionToDelete] { delete sessionToDelete; });
 
     if (_currentARCoreImageDatabase != nullptr) {
       delete (_currentARCoreImageDatabase);
