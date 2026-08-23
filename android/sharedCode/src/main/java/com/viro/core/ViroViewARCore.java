@@ -1005,6 +1005,20 @@ public class ViroViewARCore extends ViroView {
 
     @Override
     public void dispose() {
+        // Park the GL thread FIRST. GLSurfaceView.onPause() blocks until the
+        // render thread has acknowledged and released the surface, so no
+        // nativeDrawFrame can be in flight when super.dispose() destroys the
+        // native renderer below. Without this, disposing during active
+        // rendering — most likely in the waiting-for-tracking state, whose
+        // continuous loop draws every vsync — segfaulted on the GL thread
+        // (renderFrame -> renderWaitingForTracking on a dying renderer;
+        // tombstone 2026-08-22). The race was latent upstream because
+        // react-viro's stub dispose never destroyed anything; our explicit
+        // disposeArView() teardown made it real.
+        GLSurfaceView parkView = mSurfaceView;
+        if (parkView != null) {
+            parkView.onPause();
+        }
         if (mMediaRecorder != null) {
             mMediaRecorder.dispose();
         }
