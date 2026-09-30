@@ -380,6 +380,14 @@ namespace arcore {
          * Returns 0.0 if semantic data is not available.
          */
         virtual float getSemanticLabelFraction(SemanticLabel label) = 0;
+
+        /*
+         * World-from-camera pose of the PHYSICAL camera (ArCamera_getPose — sensor
+         * orientation, NOT display-oriented), as a column-major 4x4. This is the
+         * frame the CPU image, image intrinsics and depth image live in: +X right,
+         * +Y up, -Z forward (OpenGL camera convention).
+         */
+        virtual void getCameraPoseMatrix(float *outMatrix) = 0;
     };
 
     class PointCloud {

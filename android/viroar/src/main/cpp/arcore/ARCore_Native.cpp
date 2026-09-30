@@ -675,6 +675,17 @@ namespace arcore {
                                  ((LightEstimateNative *) outLightEstimate)->_lightEstimate);
     }
 
+    void FrameNative::getCameraPoseMatrix(float *outMatrix) {
+        ArCamera *camera;
+        ArFrame_acquireCamera(_session, _frame, &camera);
+        ArPose *pose;
+        ArPose_create(_session, nullptr, &pose);
+        ArCamera_getPose(_session, camera, pose);
+        ArPose_getMatrix(_session, pose, outMatrix);
+        ArPose_destroy(pose);
+        ArCamera_release(camera);
+    }
+
     int64_t FrameNative::getTimestampNs() {
         int64_t timestamp;
         ArFrame_getTimestamp(_session, _frame, &timestamp);

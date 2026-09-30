@@ -1514,7 +1514,7 @@ void VROARSessionARCore::setOcclusionMode(VROOcclusionMode mode) {
     case VROOcclusionMode::Disabled:
     default:
       // Keep depth active if world mesh still needs it
-      newDepthMode = _worldMeshDepthNeeded ? arcore::DepthMode::Automatic
+      newDepthMode = (_worldMeshDepthNeeded || _depthTapNeeded) ? arcore::DepthMode::Automatic
                                            : arcore::DepthMode::Disabled;
       break;
   }
@@ -1564,7 +1564,7 @@ bool VROARSessionARCore::isOcclusionModeSupported(VROOcclusionMode mode) const {
 
 arcore::DepthMode VROARSessionARCore::computeNeededDepthMode() const {
   bool occlusionNeedsDepth = (getOcclusionMode() != VROOcclusionMode::Disabled);
-  return (_worldMeshDepthNeeded || occlusionNeedsDepth)
+  return (_worldMeshDepthNeeded || _depthTapNeeded || occlusionNeedsDepth)
       ? arcore::DepthMode::Automatic
       : arcore::DepthMode::Disabled;
 }
@@ -1588,6 +1588,19 @@ void VROARSessionARCore::onWorldMeshEnabled(bool enabled) {
       updateARCoreConfig();
       pinfo("VROARSessionARCore: world mesh %s, depth mode set to %d",
             enabled ? "enabled" : "disabled", (int)_depthMode);
+    }
+  }
+}
+
+void VROARSessionARCore::setDepthTapNeeded(bool needed) {
+  _depthTapNeeded = needed;
+  arcore::DepthMode mode = computeNeededDepthMode();
+  if (mode != _depthMode) {
+    _depthMode = mode;
+    if (_session != nullptr) {
+      updateARCoreConfig();
+      pinfo("VROARSessionARCore: depth tap %s, depth mode set to %d",
+            needed ? "enabled" : "disabled", (int)_depthMode);
     }
   }
 }

@@ -156,6 +156,11 @@ public:
     void setOcclusionMode(VROOcclusionMode mode) override;
     bool isOcclusionSupported() const override;
     void onWorldMeshEnabled(bool enabled) override;
+
+    // Keep ARCore depth on for the on-device depth-cloud PiP (VRODepthCloudTap),
+    // independent of occlusion / world-mesh.
+    void setDepthTapNeeded(bool needed);
+    bool isDepthTapNeeded() const { return _depthTapNeeded; }
     void setFrontCameraEnabled(bool enabled);
     bool isFrontCameraEnabled() const { return _frontCameraEnabled; }
 
@@ -337,6 +342,7 @@ private:
     arcore::GeospatialMode _geospatialMode;
     bool _semanticModeEnabled = false;
     bool _worldMeshDepthNeeded = false;  // set by onWorldMeshEnabled
+    bool _depthTapNeeded = false;        // set by setDepthTapNeeded
     bool _frontCameraEnabled = false;            // use front camera via AR_AUGMENTED_FACE_MODE_MESH3D
     bool _cloudAnchorsDisabledForFaceMode = false; // once disabled for face mode, keep disabled
 

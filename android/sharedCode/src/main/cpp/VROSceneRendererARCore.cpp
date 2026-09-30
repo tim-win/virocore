@@ -53,6 +53,7 @@
 #include "VROAllocationTracker.h"
 #include "VROInputControllerARAndroid.h"
 #include "jni/VROFrameTapListener.h"
+#include "jni/VRODepthCloudTap.h"
 #include "VROShaderModifier.h"
 #include "VROShaderFactory.h"
 #include "VROMaterial.h"
@@ -160,6 +161,22 @@ void VROSceneRendererARCore::renderFrame() {
         if (arcoreFrame) {
             int cameraTextureId = (int)_session->getCameraTextureId();
             _frameTapListener->dispatchFrame(arcoreFrame, cameraTextureId, _displayRotation);
+        }
+    }
+
+    // On-device depth cloud for the live PiP. Runs AFTER the frame tap so any
+    // CPU image the tap acquired is already released (ARCore's pool is small).
+    {
+        VRODepthCloudTap &depthTap = VRODepthCloudTap::instance();
+        bool tapOn = depthTap.isEnabled();
+        if (tapOn != _session->isDepthTapNeeded()) {
+            _session->setDepthTapNeeded(tapOn);
+        }
+        if (tapOn) {
+            VROARFrameARCore *arcoreFrame = dynamic_cast<VROARFrameARCore*>(frame.get());
+            if (arcoreFrame) {
+                depthTap.process(arcoreFrame->getFrameInternal());
+            }
         }
     }
 
