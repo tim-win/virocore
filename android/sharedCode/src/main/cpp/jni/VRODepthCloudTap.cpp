@@ -35,6 +35,15 @@ VRODepthCloudTap &VRODepthCloudTap::instance() {
     return sInstance;
 }
 
+void VRODepthCloudTap::setEnabled(bool enabled) {
+    if (enabled && !_enabled) {
+        reset();
+        std::lock_guard<std::mutex> lock(_mutex);
+        _hasPose = false;
+    }
+    _enabled = enabled;
+}
+
 void VRODepthCloudTap::reset() {
     std::lock_guard<std::mutex> lock(_mutex);
     _voxels.clear();

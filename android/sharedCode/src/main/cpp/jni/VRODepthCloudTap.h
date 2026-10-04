@@ -41,7 +41,9 @@ public:
     // Render thread. Cheap no-op unless enabled.
     void process(arcore::Frame *frame);
 
-    void setEnabled(bool enabled) { _enabled = enabled; }
+    // Off->on = a new scan-screen visit = a new ARCore session (new world
+    // origin): drops the previous session's points and pose.
+    void setEnabled(bool enabled);
     bool isEnabled() const { return _enabled; }
 
     // Clears the voxel set and any undrained points (new scan).
